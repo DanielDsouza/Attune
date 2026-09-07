@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "User": {
+      "path": "users/{userId}",
+      "description": "User profile, mindfulness preferences, current state, and streak metrics",
+      "fields": {
+        "uid": { "type": "string", "description": "Firebase Auth user UID" },
+        "displayName": { "type": "string", "description": "Google display name" },
+        "email": { "type": "string", "description": "Google user email address" },
+        "photoURL": { "type": "string", "description": "Avatar photo URL" },
+        "preferences": { "type": "map", "description": "User configuration & focus goals" },
+        "currentState": { "type": "map", "description": "Most recent emotional state check-in" },
+        "streakDays": { "type": "number", "description": "Consecutive mindfulness streak count" },
+        "lastCheckInDate": { "type": "string", "description": "Date string of last active check-in" },
+        "updatedAt": { "type": "number", "description": "Last updated epoch timestamp" },
+        "createdAt": { "type": "number", "description": "Account creation epoch timestamp" }
+      }
+    },
+    "CheckInRecord": {
+      "path": "users/{userId}/checkIns/{checkInId}",
+      "description": "Historical log of emotional check-ins, pre-practice and post-practice reflection records",
+      "fields": {
+        "id": { "type": "string", "description": "Unique check-in record ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "dateStr": { "type": "string", "description": "ISO date string YYYY-MM-DD" },
+        "timeOfDay": { "type": "string", "description": "Time of day label" },
+        "stateBefore": { "type": "map", "description": "Baseline emotional state" },
+        "stateAfter": { "type": "map", "description": "Post-practice state if completed" },
+        "practiceId": { "type": "string", "description": "Optional practice ID completed" },
+        "practiceTitle": { "type": "string", "description": "Optional practice title completed" },
+        "didHelp": { "type": "string", "description": "Feedback rating on effectiveness" },
+        "wouldDoAgain": { "type": "string", "description": "Willingness to repeat practice" },
+        "notes": { "type": "string", "description": "Personal reflection notes" },
+        "completedAt": { "type": "number", "description": "Epoch completion timestamp" },
+        "timestamp": { "type": "number", "description": "Record creation timestamp" }
+      }
+    }
+  }
+}

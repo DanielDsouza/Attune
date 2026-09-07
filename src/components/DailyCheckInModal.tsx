@@ -1,25 +1,42 @@
-import React, { useState } from 'react';
-import { X, ArrowRight, Sparkles, Battery, Zap, AlertCircle, Smile, Check } from 'lucide-react';
-import { EmotionalState, DesiredState } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, ArrowRight, Sparkles, Battery, Zap, AlertCircle, Smile, Check, Play } from 'lucide-react';
+import { EmotionalState, DesiredState, Practice } from '../types';
 
 interface DailyCheckInModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: (state: EmotionalState) => void;
+  targetPractice?: Practice | null;
+  initialState?: EmotionalState | null;
 }
 
 export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
   isOpen,
   onClose,
   onComplete,
+  targetPractice,
+  initialState,
 }) => {
   const [step, setStep] = useState<number>(1);
-  const [energy, setEnergy] = useState<number>(2);
-  const [stress, setStress] = useState<number>(4);
-  const [mood, setMood] = useState<number>(2);
-  const [whatHappened, setWhatHappened] = useState<string>('');
-  const [desiredState, setDesiredState] = useState<DesiredState>('Relaxed');
+  const [energy, setEnergy] = useState<number>(() => initialState?.energy ?? 2);
+  const [stress, setStress] = useState<number>(() => initialState?.stress ?? 4);
+  const [mood, setMood] = useState<number>(() => initialState?.mood ?? 2);
+  const [whatHappened, setWhatHappened] = useState<string>(() => initialState?.whatHappened ?? '');
+  const [desiredState, setDesiredState] = useState<DesiredState>(() => initialState?.desiredState ?? 'Relaxed');
   const [wantsToAct, setWantsToAct] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      setStep(1);
+      if (initialState) {
+        setEnergy(initialState.energy ?? 2);
+        setStress(initialState.stress ?? 4);
+        setMood(initialState.mood ?? 2);
+        setWhatHappened(initialState.whatHappened ?? '');
+        setDesiredState(initialState.desiredState ?? 'Relaxed');
+      }
+    }
+  }, [isOpen, targetPractice]);
 
   if (!isOpen) return null;
 
@@ -68,12 +85,16 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
   ];
 
   const handleFinish = (proceedWithAction: boolean) => {
+    const defaultNote = targetPractice
+      ? `Pre-practice check-in before ${targetPractice.title}`
+      : 'Daily check-in';
+
     const finalState: EmotionalState = {
       energy,
       stress,
       mood,
       moodLabel: moodLabels[mood]?.label || 'Neutral',
-      whatHappened: whatHappened.trim() || 'Daily check-in',
+      whatHappened: whatHappened.trim() || defaultNote,
       desiredState,
       wantsToAct: proceedWithAction,
       timestamp: Date.now(),
@@ -95,18 +116,45 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#5A6E5A] animate-pulse" />
             <span className="text-[10px] font-semibold text-[#5A6E5A] tracking-[0.2em] uppercase">
-              Daily Check-In
+              {targetPractice ? 'Pre-Practice Check-In' : 'Daily Check-In'}
             </span>
           </div>
           <button
             id="checkin-btn-close"
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#F5F2ED] text-[#7E7468] hover:text-[#2D2D2D] flex items-center justify-center transition-all"
+            className="w-8 h-8 rounded-full bg-[#F5F2ED] text-[#7E7468] hover:text-[#2D2D2D] flex items-center justify-center transition-all cursor-pointer"
             aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Step progress & practice context subheader */}
+        <div
+          className={`px-6 py-2.5 border-b flex items-center justify-between text-xs transition-colors ${
+            targetPractice ? 'bg-[#E8F0E8] border-[#C8DACB]' : 'bg-[#F5F2ED] border-[#F0EDE8]'
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {targetPractice ? (
+              <>
+                <div className="w-5 h-5 rounded-full bg-[#5A6E5A] text-white flex items-center justify-center flex-shrink-0">
+                  <Play className="w-2.5 h-2.5 fill-white ml-0.5" />
+                </div>
+                <span className="text-[11px] font-semibold text-[#4A5D4A] truncate">
+                  Starting: {targetPractice.title} ({targetPractice.durationMinutes} min)
+                </span>
+              </>
+            ) : (
+              <span className="text-[11px] font-medium text-[#7E7468]">
+                Mindful Reflection & State Calibration
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-bold text-[#5A6E5A] uppercase tracking-wider bg-white/90 px-2 py-0.5 rounded-full border border-black/5 flex-shrink-0 ml-2">
+            Step {step} of 3
+          </span>
         </div>
 
         {/* Content Scroll Area */}
@@ -119,7 +167,9 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                   How are you feeling right now?
                 </h3>
                 <p className="text-xs sm:text-sm text-[#7E7468] mt-1">
-                  Take a breath and check in with your current state. No judgment.
+                  {targetPractice
+                    ? `Take a breath and check in with your baseline before starting ${targetPractice.title}.`
+                    : 'Take a breath and check in with your current state. No judgment.'}
                 </p>
               </div>
 
@@ -140,7 +190,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                       key={lvl}
                       type="button"
                       onClick={() => setEnergy(lvl)}
-                      className={`py-2 rounded-xl text-xs font-semibold transition-all ${
+                      className={`py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                         energy === lvl
                           ? 'bg-[#5A6E5A] text-white shadow-sm'
                           : 'bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9]'
@@ -169,7 +219,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                       key={lvl}
                       type="button"
                       onClick={() => setStress(lvl)}
-                      className={`py-2 rounded-xl text-xs font-semibold transition-all ${
+                      className={`py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                         stress === lvl
                           ? 'bg-[#5A6E5A] text-white shadow-sm'
                           : 'bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9]'
@@ -198,7 +248,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                       key={lvl}
                       type="button"
                       onClick={() => setMood(lvl)}
-                      className={`py-2 rounded-xl text-xs font-semibold transition-all ${
+                      className={`py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                         mood === lvl
                           ? 'bg-[#5A6E5A] text-white shadow-sm'
                           : 'bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9]'
@@ -217,7 +267,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                 id="checkin-btn-step1-next"
                 type="button"
                 onClick={() => setStep(2)}
-                className="w-full py-4 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-sm flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-md shadow-[#5A6E5A]/25"
+                className="w-full py-4 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-sm flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-md shadow-[#5A6E5A]/25 cursor-pointer"
               >
                 <span>Continue</span>
                 <ArrowRight className="w-4 h-4" />
@@ -230,10 +280,12 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
             <div className="space-y-5">
               <div>
                 <h3 className="text-2xl font-serif font-light text-[#4A5D4A]">
-                  What happened today?
+                  {targetPractice ? "What's on your mind right now?" : 'What happened today?'}
                 </h3>
                 <p className="text-xs sm:text-sm text-[#7E7468] mt-1">
-                  Briefly capture anything that influenced your mood or energy.
+                  {targetPractice
+                    ? 'Briefly capture any thoughts, physical sensations, or context you bring to this session.'
+                    : 'Briefly capture anything that influenced your mood or energy.'}
                 </p>
               </div>
 
@@ -243,7 +295,11 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                   rows={3}
                   value={whatHappened}
                   onChange={(e) => setWhatHappened(e.target.value)}
-                  placeholder="e.g., Long afternoon meeting, caught in rain, felt rushed..."
+                  placeholder={
+                    targetPractice
+                      ? `e.g., Feeling shoulder tension, need to reset after back-to-back tasks...`
+                      : 'e.g., Long afternoon meeting, caught in rain, felt rushed...'
+                  }
                   className="w-full p-4 rounded-2xl bg-white border border-[#F0EDE8] text-[#2D2D2D] placeholder-[#A69D91] focus:outline-none focus:ring-2 focus:ring-[#5A6E5A]/30 focus:border-[#5A6E5A] text-sm resize-none"
                 />
 
@@ -256,7 +312,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                       onClick={() =>
                         setWhatHappened((prev) => (prev ? `${prev}, ${item}` : item))
                       }
-                      className="px-2.5 py-1 rounded-full text-xs bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9] border border-[#F0EDE8] transition-all"
+                      className="px-2.5 py-1 rounded-full text-xs bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9] border border-[#F0EDE8] transition-all cursor-pointer"
                     >
                       + {item}
                     </button>
@@ -269,7 +325,9 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                   How would you like to feel?
                 </h4>
                 <p className="text-xs text-[#7E7468] mb-3">
-                  Choose the state you want to invite in right now.
+                  {targetPractice
+                    ? 'Confirm your intended state for this practice session.'
+                    : 'Choose the state you want to invite in right now.'}
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -280,7 +338,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                         key={opt.title}
                         type="button"
                         onClick={() => setDesiredState(opt.title)}
-                        className={`p-3.5 rounded-2xl text-left border flex items-start justify-between transition-all ${
+                        className={`p-3.5 rounded-2xl text-left border flex items-start justify-between transition-all cursor-pointer ${
                           selected
                             ? 'bg-[#5A6E5A] text-white border-[#5A6E5A] shadow-sm'
                             : 'bg-white text-[#2D2D2D] border-[#F0EDE8] hover:bg-[#F5F2ED]'
@@ -312,7 +370,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="py-3.5 px-5 rounded-2xl border border-[#F0EDE8] bg-white text-[#7E7468] text-sm font-medium hover:bg-[#F5F2ED] transition-all"
+                  className="py-3.5 px-5 rounded-2xl border border-[#F0EDE8] bg-white text-[#7E7468] text-sm font-medium hover:bg-[#F5F2ED] transition-all cursor-pointer"
                 >
                   Back
                 </button>
@@ -320,57 +378,98 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                   id="checkin-btn-step2-next"
                   type="button"
                   onClick={() => setStep(3)}
-                  className="flex-1 py-3.5 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-sm flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-md shadow-[#5A6E5A]/25"
+                  className="flex-1 py-3.5 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-sm flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-md shadow-[#5A6E5A]/25 cursor-pointer"
                 >
-                  <span>Continue</span>
+                  <span>{targetPractice ? 'Review & Begin' : 'Continue'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 3: Do you want to do something for yourself right now? */}
+          {/* STEP 3: Final confirmation */}
           {step === 3 && (
             <div className="space-y-6 text-center py-2">
               <div className="w-16 h-16 rounded-full bg-[#E8F0E8] text-[#5A6E5A] flex items-center justify-center mx-auto shadow-inner">
-                <Sparkles className="w-8 h-8 text-[#5A6E5A]" />
+                {targetPractice ? (
+                  <Play className="w-7 h-7 fill-[#5A6E5A] text-[#5A6E5A] ml-1" />
+                ) : (
+                  <Sparkles className="w-8 h-8 text-[#5A6E5A]" />
+                )}
               </div>
 
               <div>
                 <h3 className="text-2xl font-serif font-light text-[#4A5D4A]">
-                  Do you want to do something for yourself right now?
+                  {targetPractice
+                    ? 'Ready to begin your practice?'
+                    : 'Do you want to do something for yourself right now?'}
                 </h3>
                 <p className="text-xs sm:text-sm text-[#7E7468] max-w-sm mx-auto mt-2 leading-relaxed">
-                  We’ve analyzed your current state (Energy {energy}/5, Stress {stress}/5) and your goal to feel <strong>{desiredState}</strong>.
+                  {targetPractice ? (
+                    <>
+                      We've captured your starting baseline (Energy {energy}/5, Stress {stress}/5, Mood: {moodLabels[mood]?.label}). Let's start <strong>{targetPractice.title}</strong> ({targetPractice.durationMinutes} min).
+                    </>
+                  ) : (
+                    <>
+                      We’ve analyzed your current state (Energy {energy}/5, Stress {stress}/5) and your goal to feel <strong>{desiredState}</strong>.
+                    </>
+                  )}
                 </p>
               </div>
 
               <div className="p-4 rounded-2xl bg-white border border-[#F0EDE8] text-left max-w-sm mx-auto space-y-1 text-xs text-[#7E7468]">
-                <div className="font-semibold text-[#2D2D2D]">Summary of your check-in:</div>
+                <div className="font-semibold text-[#2D2D2D]">
+                  {targetPractice ? 'Pre-Practice Baseline:' : 'Summary of your check-in:'}
+                </div>
                 <div>• Current State: Energy {energy}/5 · Stress {stress}/5 · Mood: {moodLabels[mood]?.label}</div>
-                <div>• Goal: {desiredState}</div>
+                <div>• Session Goal: {desiredState}</div>
                 {whatHappened && <div>• Reflection: "{whatHappened}"</div>}
               </div>
 
               <div className="space-y-3 pt-2">
-                <button
-                  id="checkin-btn-yes-act"
-                  type="button"
-                  onClick={() => handleFinish(true)}
-                  className="w-full py-4 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-base flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-lg shadow-[#5A6E5A]/25"
-                >
-                  <Sparkles className="w-5 h-5 text-[#E8F0E8]" />
-                  <span>Yes, show my recommendation</span>
-                </button>
+                {targetPractice ? (
+                  <>
+                    <button
+                      id="checkin-btn-start-practice"
+                      type="button"
+                      onClick={() => handleFinish(true)}
+                      className="w-full py-4 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-base flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-lg shadow-[#5A6E5A]/25 cursor-pointer"
+                    >
+                      <Play className="w-5 h-5 fill-white ml-0.5" />
+                      <span>Start Practice ({targetPractice.durationMinutes} min)</span>
+                    </button>
 
-                <button
-                  id="checkin-btn-not-now"
-                  type="button"
-                  onClick={() => handleFinish(false)}
-                  className="w-full py-3.5 px-6 rounded-2xl bg-transparent text-[#7E7468] hover:text-[#2D2D2D] border border-[#F0EDE8] hover:bg-[#F5F2ED] font-medium text-sm transition-all"
-                >
-                  Not now, just save my check-in
-                </button>
+                    <button
+                      id="checkin-btn-cancel-practice"
+                      type="button"
+                      onClick={onClose}
+                      className="w-full py-3 px-6 rounded-2xl bg-transparent text-[#7E7468] hover:text-[#2D2D2D] border border-[#F0EDE8] hover:bg-[#F5F2ED] font-medium text-sm transition-all cursor-pointer"
+                    >
+                      Cancel session
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      id="checkin-btn-yes-act"
+                      type="button"
+                      onClick={() => handleFinish(true)}
+                      className="w-full py-4 px-6 rounded-2xl bg-[#5A6E5A] text-white font-medium text-base flex items-center justify-center gap-2 hover:bg-[#4A5D4A] active:scale-[0.99] transition-all shadow-lg shadow-[#5A6E5A]/25 cursor-pointer"
+                    >
+                      <Sparkles className="w-5 h-5 text-[#E8F0E8]" />
+                      <span>Yes, show my recommendation</span>
+                    </button>
+
+                    <button
+                      id="checkin-btn-not-now"
+                      type="button"
+                      onClick={() => handleFinish(false)}
+                      className="w-full py-3.5 px-6 rounded-2xl bg-transparent text-[#7E7468] hover:text-[#2D2D2D] border border-[#F0EDE8] hover:bg-[#F5F2ED] font-medium text-sm transition-all cursor-pointer"
+                    >
+                      Not now, just save my check-in
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

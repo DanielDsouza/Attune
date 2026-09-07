@@ -18,6 +18,16 @@ import {
   DEFAULT_INITIAL_STATE,
   SEED_CHECK_IN_HISTORY,
 } from './services/storage';
+import {
+  loginWithGoogle,
+  logoutUser,
+  onAuthChange,
+  syncUserProfile,
+  loadUserDataFromFirestore,
+  saveCheckInToFirestore,
+  clearUserCheckInsInFirestore,
+} from './services/firebase';
+import type { User as FirebaseUser } from 'firebase/auth';
 import { getRecommendation } from './services/recommendationEngine';
 import { soundEngine } from './services/soundEngine';
 import { Navigation } from './components/Navigation';
@@ -32,6 +42,13 @@ import { ProgressView } from './components/ProgressView';
 import { ProfileView } from './components/ProfileView';
 
 export default function App() {
+  // Google Auth & Cloud Sync states
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   // App state
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
     storage.getPreferences()
@@ -53,6 +70,7 @@ export default function App() {
     !preferences.onboarded
   );
   const [showCheckInModal, setShowCheckInModal] = useState<boolean>(false);
+  const [pendingPractice, setPendingPractice] = useState<Practice | null>(null);
   const [activePractice, setActivePractice] = useState<Practice | null>(null);
   const [stateBeforePractice, setStateBeforePractice] =
     useState<EmotionalState | null>(null);
@@ -85,35 +103,174 @@ export default function App() {
     setRecommendation(rec);
   }, [currentState, history]);
 
-  // Save changes to localStorage
+  // Firebase Google Auth Listener & Firestore Data Hydration
+  useEffect(() => {
+    const unsubscribe = onAuthChange(async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        setIsSyncing(true);
+        try {
+          // Attempt to load existing user profile and records from Firestore
+          const remoteData = await loadUserDataFromFirestore(user.uid);
+          if (remoteData && remoteData.profile) {
+            // Restore user profile preferences
+            if (remoteData.profile.preferences) {
+              const mergedPrefs: UserPreferences = {
+                ...remoteData.profile.preferences,
+                name: remoteData.profile.preferences.name || user.displayName || 'Friend',
+              };
+              setPreferences(mergedPrefs);
+              storage.savePreferences(mergedPrefs);
+            }
+            // Restore current emotional state
+            if (remoteData.profile.currentState) {
+              setCurrentState(remoteData.profile.currentState);
+              storage.saveCurrentState(remoteData.profile.currentState);
+            }
+            // Restore historical check-in records
+            if (remoteData.checkIns && remoteData.checkIns.length > 0) {
+              setHistory(remoteData.checkIns);
+              localStorage.setItem(
+                'mindful_companion_checkins_v1',
+                JSON.stringify(remoteData.checkIns)
+              );
+            }
+          } else {
+            // New user in Firestore: seed initial profile and sync existing local records so work isn't lost
+            const initialPrefs: UserPreferences = {
+              ...preferences,
+              name: user.displayName || preferences.name || 'Friend',
+            };
+            setPreferences(initialPrefs);
+            storage.savePreferences(initialPrefs);
+
+            await syncUserProfile(user, {
+              preferences: initialPrefs,
+              currentState,
+              streakDays,
+              lastCheckInDate: new Date().toISOString().split('T')[0],
+            });
+
+            // Upload current history to Firestore
+            for (const record of history) {
+              await saveCheckInToFirestore(user.uid, record);
+            }
+          }
+          setLastSyncedTime(Date.now());
+        } catch (err) {
+          console.error('Failed to hydrate user data from Firestore:', err);
+        } finally {
+          setIsSyncing(false);
+          setIsAuthLoading(false);
+        }
+      } else {
+        setIsAuthLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Google Login Handler
+  const handleGoogleLogin = async () => {
+    setAuthError(null);
+    setIsSyncing(true);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      console.error('Google Sign-In Error:', err);
+      if (err?.code === 'auth/popup-blocked') {
+        setAuthError(
+          'Sign-in popup was blocked by browser. Please enable popups or open the app in a new tab.'
+        );
+      } else if (err?.code === 'auth/popup-closed-by-user') {
+        // Dismissed by user without completing
+      } else {
+        setAuthError(err?.message || 'Unable to sign in with Google. Please try again.');
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Google Logout Handler
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      setCurrentUser(null);
+      setLastSyncedTime(null);
+    } catch (err) {
+      console.error('Sign-out failed:', err);
+    }
+  };
+
+  // Manual Trigger to Sync with Cloud
+  const handleManualSync = async () => {
+    if (!currentUser) return;
+    setIsSyncing(true);
+    try {
+      await syncUserProfile(currentUser, {
+        preferences,
+        currentState,
+        streakDays,
+        lastCheckInDate: new Date().toISOString().split('T')[0],
+      });
+      setLastSyncedTime(Date.now());
+    } catch (err) {
+      console.error('Manual sync failed:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Save changes to localStorage & Cloud
   const handleUpdatePreferences = (updated: UserPreferences) => {
     setPreferences(updated);
     storage.savePreferences(updated);
+    if (currentUser) {
+      syncUserProfile(currentUser, { preferences: updated })
+        .then(() => setLastSyncedTime(Date.now()))
+        .catch(console.error);
+    }
   };
 
   const handleCompleteOnboarding = (updated: UserPreferences) => {
     setPreferences(updated);
     storage.savePreferences(updated);
     setShowOnboarding(false);
+    if (currentUser) {
+      syncUserProfile(currentUser, { preferences: updated })
+        .then(() => setLastSyncedTime(Date.now()))
+        .catch(console.error);
+    }
   };
 
-  // Handle Daily Check In completion
+  // Open standard daily check-in
+  const handleOpenDailyCheckIn = () => {
+    setPendingPractice(null);
+    setShowCheckInModal(true);
+  };
+
+  // Close check-in modal and cancel pending practice
+  const handleCloseCheckInModal = () => {
+    setShowCheckInModal(false);
+    setPendingPractice(null);
+  };
+
+  // Handle Check In completion (for daily check-in or pre-practice check-in)
   const handleCheckInComplete = (newState: EmotionalState) => {
     setCurrentState(newState);
     storage.saveCurrentState(newState);
     setShowCheckInModal(false);
 
-    // If user clicked "Yes, show my recommendation"
-    if (newState.wantsToAct) {
-      const rec = getRecommendation(newState, history);
-      setRecommendation(rec);
+    // If starting a practice session: start practice immediately with fresh baseline
+    if (pendingPractice) {
+      const practiceToStart = pendingPractice;
+      setPendingPractice(null);
+      setStateBeforePractice(newState);
+      setActivePractice(practiceToStart);
 
-      // If user consistently dislikes meditation, open Alternatives directly
-      if (rec.suggestExploreFirst) {
-        setShowAlternativesModal(true);
-      }
-    } else {
-      // Just record the check-in
+      // Record pre-practice check-in in history
       const newRecord: CheckInRecord = {
         id: `checkin-${Date.now()}`,
         dateStr: new Date().toISOString().split('T')[0],
@@ -127,13 +284,63 @@ export default function App() {
       const updatedHistory = [newRecord, ...history];
       setHistory(updatedHistory);
       storage.saveCheckIn(newRecord);
+
+      // Persist to Firebase if logged in
+      if (currentUser) {
+        saveCheckInToFirestore(currentUser.uid, newRecord).catch(console.error);
+        syncUserProfile(currentUser, {
+          currentState: newState,
+          streakDays,
+          lastCheckInDate: new Date().toISOString().split('T')[0],
+        })
+          .then(() => setLastSyncedTime(Date.now()))
+          .catch(console.error);
+      }
+      return;
+    }
+
+    // Daily Check-In completion
+    const newRecord: CheckInRecord = {
+      id: `checkin-${Date.now()}`,
+      dateStr: new Date().toISOString().split('T')[0],
+      timeOfDay: new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      stateBefore: newState,
+      timestamp: Date.now(),
+    };
+    const updatedHistory = [newRecord, ...history];
+    setHistory(updatedHistory);
+    storage.saveCheckIn(newRecord);
+
+    // Persist to Firebase if logged in
+    if (currentUser) {
+      saveCheckInToFirestore(currentUser.uid, newRecord).catch(console.error);
+      syncUserProfile(currentUser, {
+        currentState: newState,
+        streakDays,
+        lastCheckInDate: new Date().toISOString().split('T')[0],
+      })
+        .then(() => setLastSyncedTime(Date.now()))
+        .catch(console.error);
+    }
+
+    if (newState.wantsToAct) {
+      const rec = getRecommendation(newState, history);
+      setRecommendation(rec);
+
+      // If user consistently dislikes meditation, open Alternatives directly
+      if (rec.suggestExploreFirst) {
+        setShowAlternativesModal(true);
+      }
     }
   };
 
-  // Start Practice
+  // Start Practice: Prompt mandatory check-in first, then launch practice
   const handleStartPractice = (practice: Practice) => {
-    setStateBeforePractice(currentState);
-    setActivePractice(practice);
+    setPendingPractice(practice);
+    setShowCheckInModal(true);
   };
 
   // When practice completes in player
@@ -173,6 +380,10 @@ export default function App() {
       const updatedHistory = [record, ...history];
       setHistory(updatedHistory);
       storage.saveCheckIn(record);
+
+      if (currentUser) {
+        saveCheckInToFirestore(currentUser.uid, record).catch(console.error);
+      }
       setShowPostFeedback(false);
       return;
     }
@@ -210,6 +421,16 @@ export default function App() {
     setCurrentState(updatedState);
     storage.saveCurrentState(updatedState);
 
+    // Persist to Firebase if logged in
+    if (currentUser) {
+      saveCheckInToFirestore(currentUser.uid, record).catch(console.error);
+      syncUserProfile(currentUser, {
+        currentState: updatedState,
+      })
+        .then(() => setLastSyncedTime(Date.now()))
+        .catch(console.error);
+    }
+
     setShowPostFeedback(false);
   };
 
@@ -222,6 +443,11 @@ export default function App() {
       'mindful_companion_checkins_v1',
       JSON.stringify(SEED_CHECK_IN_HISTORY)
     );
+    if (currentUser) {
+      syncUserProfile(currentUser, {
+        currentState: DEFAULT_INITIAL_STATE,
+      }).catch(console.error);
+    }
     alert('Loaded 6-day sample mindful journey with before & after ratings!');
   };
 
@@ -231,6 +457,14 @@ export default function App() {
     setCurrentState(DEFAULT_INITIAL_STATE);
     setHistory([]);
     setShowOnboarding(true);
+    if (currentUser) {
+      clearUserCheckInsInFirestore(currentUser.uid).catch(console.error);
+      syncUserProfile(currentUser, {
+        preferences: DEFAULT_PREFERENCES,
+        currentState: DEFAULT_INITIAL_STATE,
+        streakDays: 1,
+      }).catch(console.error);
+    }
   };
 
   return (
@@ -243,10 +477,13 @@ export default function App() {
             currentState={currentState}
             recommendation={recommendation}
             streakDays={streakDays}
-            onOpenCheckIn={() => setShowCheckInModal(true)}
+            onOpenCheckIn={handleOpenDailyCheckIn}
             onStartPractice={handleStartPractice}
             onNotWhatINeed={() => setShowAlternativesModal(true)}
             onGoToExplore={() => setCurrentTab('explore')}
+            currentUser={currentUser}
+            onGoogleLogin={handleGoogleLogin}
+            isSyncing={isSyncing}
           />
         )}
 
@@ -270,6 +507,13 @@ export default function App() {
             onRetakeOnboarding={() => setShowOnboarding(true)}
             onResetSampleData={handleResetSampleData}
             onClearAllData={handleClearAll}
+            currentUser={currentUser}
+            onGoogleLogin={handleGoogleLogin}
+            onLogout={handleLogout}
+            isSyncing={isSyncing}
+            lastSyncedTime={lastSyncedTime}
+            authError={authError}
+            onManualSync={handleManualSync}
           />
         )}
       </main>
@@ -281,7 +525,7 @@ export default function App() {
           setCurrentTab(tab);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
-        onOpenCheckIn={() => setShowCheckInModal(true)}
+        onOpenCheckIn={handleOpenDailyCheckIn}
       />
 
       {/* Guided Practice Active Full-Screen Screen */}
@@ -306,12 +550,14 @@ export default function App() {
         />
       )}
 
-      {/* Daily Check-In Modal Flow */}
+      {/* Check-In Modal Flow (Daily or Pre-Practice) */}
       {showCheckInModal && (
         <DailyCheckInModal
           isOpen={showCheckInModal}
-          onClose={() => setShowCheckInModal(false)}
+          onClose={handleCloseCheckInModal}
           onComplete={handleCheckInComplete}
+          targetPractice={pendingPractice}
+          initialState={currentState}
         />
       )}
 
