@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, Sparkles, Battery, Zap, AlertCircle, Smile, Check, Play } from 'lucide-react';
-import { EmotionalState, DesiredState, Practice } from '../types';
+import { X, ArrowRight, Sparkles, Battery, Zap, AlertCircle, Smile, Check, Play, Target } from 'lucide-react';
+import { EmotionalState, DesiredState, Practice, GoalReflection } from '../types';
 
 interface DailyCheckInModalProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface DailyCheckInModalProps {
   onComplete: (state: EmotionalState) => void;
   targetPractice?: Practice | null;
   initialState?: EmotionalState | null;
+  userGoals?: string[];
 }
 
 export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
@@ -16,14 +17,30 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
   onComplete,
   targetPractice,
   initialState,
+  userGoals = [],
 }) => {
   const [step, setStep] = useState<number>(1);
   const [energy, setEnergy] = useState<number>(() => initialState?.energy ?? 2);
   const [stress, setStress] = useState<number>(() => initialState?.stress ?? 4);
+  const [stressRating10, setStressRating10] = useState<number>(() =>
+    initialState?.stressRating10 ?? (initialState?.stress ? initialState.stress * 2 : 6)
+  );
   const [mood, setMood] = useState<number>(() => initialState?.mood ?? 2);
   const [whatHappened, setWhatHappened] = useState<string>(() => initialState?.whatHappened ?? '');
   const [desiredState, setDesiredState] = useState<DesiredState>(() => initialState?.desiredState ?? 'Relaxed');
   const [wantsToAct, setWantsToAct] = useState<boolean>(true);
+
+  // Goal reflection state
+  const defaultGoal = userGoals.length > 0 ? userGoals[0] : 'Calm & Balance';
+  const [selectedGoal, setSelectedGoal] = useState<string>(
+    initialState?.goalReflection?.primaryGoal || defaultGoal
+  );
+  const [goalStatus, setGoalStatus] = useState<GoalReflection['status']>(
+    initialState?.goalReflection?.status || 'progressing'
+  );
+  const [goalNote, setGoalNote] = useState<string>(
+    initialState?.goalReflection?.note || ''
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -31,9 +48,17 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
       if (initialState) {
         setEnergy(initialState.energy ?? 2);
         setStress(initialState.stress ?? 4);
+        setStressRating10(
+          initialState.stressRating10 ?? (initialState.stress ? initialState.stress * 2 : 6)
+        );
         setMood(initialState.mood ?? 2);
         setWhatHappened(initialState.whatHappened ?? '');
         setDesiredState(initialState.desiredState ?? 'Relaxed');
+        if (initialState.goalReflection) {
+          setSelectedGoal(initialState.goalReflection.primaryGoal);
+          setGoalStatus(initialState.goalReflection.status);
+          setGoalNote(initialState.goalReflection.note || '');
+        }
       }
     }
   }, [isOpen, targetPractice]);
@@ -92,11 +117,17 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
     const finalState: EmotionalState = {
       energy,
       stress,
+      stressRating10,
       mood,
       moodLabel: moodLabels[mood]?.label || 'Neutral',
       whatHappened: whatHappened.trim() || defaultNote,
       desiredState,
       wantsToAct: proceedWithAction,
+      goalReflection: {
+        primaryGoal: selectedGoal,
+        status: goalStatus,
+        note: goalNote.trim() || undefined,
+      },
       timestamp: Date.now(),
     };
     onComplete(finalState);
@@ -202,25 +233,28 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                 </div>
               </div>
 
-              {/* Stress Level */}
+              {/* Stress Level (1 to 10 Scale) */}
               <div className="p-4 rounded-2xl bg-white border border-[#F0EDE8] shadow-sm space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-[#A69D91]" />
-                    <span className="text-sm font-semibold text-[#2D2D2D]">Stress & Tension</span>
+                    <span className="text-sm font-semibold text-[#2D2D2D]">Stress & Tension (1 to 10)</span>
                   </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#F5F2ED] text-[#7E7468]">
-                    {stress} / 5 · {stressLabels[stress]}
+                    {stressRating10} / 10
                   </span>
                 </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {[1, 2, 3, 4, 5].map((lvl) => (
+                <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((lvl) => (
                     <button
                       key={lvl}
                       type="button"
-                      onClick={() => setStress(lvl)}
+                      onClick={() => {
+                        setStressRating10(lvl);
+                        setStress(Math.ceil(lvl / 2));
+                      }}
                       className={`py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                        stress === lvl
+                        stressRating10 === lvl
                           ? 'bg-[#5A6E5A] text-white shadow-sm'
                           : 'bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9]'
                       }`}
@@ -228,6 +262,11 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                       {lvl}
                     </button>
                   ))}
+                </div>
+                <div className="flex justify-between text-[10px] text-[#A69D91]">
+                  <span>1 = Peaceful</span>
+                  <span>5 = Moderate</span>
+                  <span>10 = Overwhelmed</span>
                 </div>
               </div>
 
@@ -315,6 +354,56 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({
                       className="px-2.5 py-1 rounded-full text-xs bg-[#F5F2ED] text-[#7E7468] hover:bg-[#E8E2D9] border border-[#F0EDE8] transition-all cursor-pointer"
                     >
                       + {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Goal Check-In Reflection Section */}
+              <div className="p-4 rounded-2xl bg-white border border-[#F0EDE8] shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-[#5A6E5A]" />
+                    <span className="text-sm font-semibold text-[#2D2D2D]">Check-In on Your Goal</span>
+                  </div>
+                  {userGoals.length > 1 ? (
+                    <select
+                      value={selectedGoal}
+                      onChange={(e) => setSelectedGoal(e.target.value)}
+                      className="text-xs font-semibold px-2 py-1 rounded-xl bg-[#F5F2ED] text-[#5A6E5A] border border-[#E8E2D9] focus:outline-none"
+                    >
+                      {userGoals.map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#E8F0E8] text-[#5A6E5A]">
+                      {selectedGoal}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-[#7E7468]">
+                  How aligned do you feel with your focus area today?
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'progressing', label: 'Progressing well', icon: '🌿' },
+                    { id: 'need_support', label: 'Need gentle support', icon: '🤝' },
+                    { id: 'distracted', label: 'Feeling distracted', icon: '🌪️' },
+                    { id: 'breakthrough', label: 'Had a breakthrough', icon: '💡' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setGoalStatus(opt.id as any)}
+                      className={`py-2 px-3 rounded-xl text-xs font-medium border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                        goalStatus === opt.id
+                          ? 'bg-[#5A6E5A] text-white border-[#5A6E5A] shadow-xs'
+                          : 'bg-[#FBF9F6] text-[#7E7468] border-[#F0EDE8] hover:bg-[#F5F2ED]'
+                      }`}
+                    >
+                      <span>{opt.icon}</span>
+                      <span className="truncate">{opt.label}</span>
                     </button>
                   ))}
                 </div>

@@ -8,13 +8,21 @@ const STORAGE_KEYS = {
 };
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
-  name: 'Alex',
+  name: '',
   checkInTime: 'evening',
-  goals: ['Calm', 'Stress Management', 'Focus', 'Better Sleep'],
-  interests: ['Music', 'Walking', 'Art', 'Reading', 'Yoga'],
-  activityTypes: ['Guided practice', 'Movement', 'Creative activities'],
+  goals: ['Calm', 'Stress Management'],
+  interests: ['Mindfulness', 'Walking', 'Breathing'],
+  activityTypes: ['Guided practice', 'Movement'],
   soundEnabled: true,
-  onboarded: true,
+  onboarded: false,
+  reminderSettings: {
+    enabled: false,
+    frequency: 'daily',
+    preferredTime: '08:30',
+    alarmSoundEnabled: true,
+    browserNotificationEnabled: false,
+    googleCalendarEnabled: false,
+  },
 };
 
 export const DEFAULT_INITIAL_STATE: EmotionalState = {
@@ -22,10 +30,10 @@ export const DEFAULT_INITIAL_STATE: EmotionalState = {
   stress: 4,
   mood: 2,
   moodLabel: 'Overwhelmed',
-  whatHappened: 'Back-to-back work meetings and pending project deadlines.',
-  desiredState: 'Relaxed',
+  whatHappened: '',
+  desiredState: 'Calm',
   wantsToAct: true,
-  timestamp: Date.now() - 1000 * 60 * 30, // 30 mins ago
+  timestamp: Date.now(),
 };
 
 // Seed 6 days of realistic history so Progress & Insights are immediately informative
@@ -188,12 +196,12 @@ export const storage = {
       const data = localStorage.getItem(STORAGE_KEYS.CHECK_INS);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {
       // Fallback
     }
-    return SEED_CHECK_IN_HISTORY;
+    return [];
   },
 
   saveCheckIn(record: CheckInRecord): void {
@@ -211,14 +219,14 @@ export const storage = {
     }
   },
 
-  getCurrentState(): EmotionalState {
+  getCurrentState(): EmotionalState | null {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CURRENT_STATE);
       if (data) return JSON.parse(data);
     } catch {
       // Fallback
     }
-    return DEFAULT_INITIAL_STATE;
+    return null;
   },
 
   saveCurrentState(state: EmotionalState): void {

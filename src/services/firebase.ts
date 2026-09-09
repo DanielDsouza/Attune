@@ -11,7 +11,6 @@ import {
   getFirestore,
   doc,
   getDoc,
-  getDocFromServer,
   setDoc,
   collection,
   getDocs,
@@ -72,23 +71,34 @@ export const db = (firebaseConfigData as { firestoreDatabaseId?: string }).fires
     )
   : getFirestore(firebaseApp);
 
-// Test Firestore connection on boot
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration or network connectivity.');
-    }
-  }
-}
-testConnection();
-
 // Configure Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/calendar.events');
 googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
+
+// Cache OAuth access token in-memory and sessionStorage for Google Workspace API calls (e.g. Google Calendar)
+let cachedAccessToken: string | null =
+  (typeof window !== 'undefined' && sessionStorage.getItem('g_calendar_token')) || null;
+
+export function getGoogleAccessToken(): string | null {
+  return (
+    cachedAccessToken ||
+    (typeof window !== 'undefined' ? sessionStorage.getItem('g_calendar_token') : null)
+  );
+}
+
+export function setGoogleAccessToken(token: string | null) {
+  cachedAccessToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      sessionStorage.setItem('g_calendar_token', token);
+    } else {
+      sessionStorage.removeItem('g_calendar_token');
+    }
+  }
+}
 
 function handleFirestoreError(
   error: unknown,
@@ -111,10 +121,13 @@ function handleFirestoreError(
 }
 
 // Google Sign-In with popup
-export async function loginWithGoogle(): Promise<FirebaseUser> {
+export async function loginWithGoogle(): Promise<{ user: FirebaseUser; accessToken: string | null }> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken || null;
+    setGoogleAccessToken(token);
+    return { user: result.user, accessToken: token };
   } catch (error: any) {
     console.error('Google Sign-In Error:', error);
     throw error;
@@ -125,6 +138,7 @@ export async function loginWithGoogle(): Promise<FirebaseUser> {
 export async function logoutUser(): Promise<void> {
   try {
     await signOut(auth);
+    setGoogleAccessToken(null);
   } catch (error) {
     console.error('Sign-Out Error:', error);
     throw error;

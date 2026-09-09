@@ -1,6 +1,6 @@
 {
-  "name": "Mindful Companion",
-  "description": "A personalized mindfulness and wellbeing companion that helps you understand how you feel and find small, meaningful actions for your day.",
+  "name": "Attune",
+  "description": "Attune is a personalized AI-powered mindfulness and wellbeing companion that helps you understand how you feel and find small, meaningful actions for your day.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

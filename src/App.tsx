@@ -11,6 +11,7 @@ import {
   Practice,
   ExploreItem,
   RecommendationResult,
+  ReminderSettings,
 } from './types';
 import {
   storage,
@@ -26,10 +27,19 @@ import {
   loadUserDataFromFirestore,
   saveCheckInToFirestore,
   clearUserCheckInsInFirestore,
+  getGoogleAccessToken,
 } from './services/firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { getRecommendation } from './services/recommendationEngine';
+import {
+  getLLMRecommendation,
+  getFallbackRecommendation,
+} from './services/recommendationEngine';
 import { soundEngine } from './services/soundEngine';
+import {
+  syncMindfulCalendarEvent,
+  removeMindfulCalendarEvent,
+  triggerBrowserNotification,
+} from './services/calendarService';
 import { Navigation } from './components/Navigation';
 import { OnboardingModal } from './components/OnboardingModal';
 import { DailyCheckInModal } from './components/DailyCheckInModal';
@@ -40,6 +50,7 @@ import { HomeDashboard } from './components/HomeDashboard';
 import { ExploreView } from './components/ExploreView';
 import { ProgressView } from './components/ProgressView';
 import { ProfileView } from './components/ProfileView';
+import { FirstTimeCheckInFlow } from './components/FirstTimeCheckInFlow';
 
 export default function App() {
   // Google Auth & Cloud Sync states
@@ -48,6 +59,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isCalendarSyncing, setIsCalendarSyncing] = useState<boolean>(false);
 
   // App state
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
@@ -58,6 +70,11 @@ export default function App() {
   );
   const [history, setHistory] = useState<CheckInRecord[]>(() =>
     storage.getCheckIns()
+  );
+
+  // Guest first-time cycle completed flag
+  const [hasCompletedGuestCycle, setHasCompletedGuestCycle] = useState<boolean>(
+    () => history.length > 0
   );
 
   // Active view tab: 'home' | 'explore' | 'progress' | 'profile'
@@ -87,21 +104,113 @@ export default function App() {
       .size
   );
 
-  // Recommendation derived from current state and history
+  // Recommendation derived from current state, history, and user preferences (goals)
   const [recommendation, setRecommendation] = useState<RecommendationResult>(
-    () => getRecommendation(currentState, history)
+    () => getFallbackRecommendation(currentState, history, preferences)
   );
+  const [isRecommendationLoading, setIsRecommendationLoading] = useState<boolean>(false);
 
   // Sync sound engine
   useEffect(() => {
     soundEngine.setMuted(!preferences.soundEnabled);
   }, [preferences.soundEnabled]);
 
-  // Recalculate recommendation when currentState or history updates
+  // Asynchronously query the Attune AI recommendation engine with state and feedback history
+  const refreshLLMRecommendation = async (
+    stateToUse: EmotionalState = currentState,
+    historyToUse: CheckInRecord[] = history
+  ) => {
+    setIsRecommendationLoading(true);
+    try {
+      const rec = await getLLMRecommendation(stateToUse, historyToUse, preferences);
+      setRecommendation(rec);
+    } catch (err) {
+      console.error('Failed to get LLM recommendation:', err);
+    } finally {
+      setIsRecommendationLoading(false);
+    }
+  };
+
+  // Recalculate LLM recommendation when currentState or recent history changes
   useEffect(() => {
-    const rec = getRecommendation(currentState, history);
-    setRecommendation(rec);
-  }, [currentState, history]);
+    let isCancelled = false;
+    setIsRecommendationLoading(true);
+
+    getLLMRecommendation(currentState, history, preferences)
+      .then((rec) => {
+        if (!isCancelled) {
+          setRecommendation(rec);
+          setIsRecommendationLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          console.error('Error fetching recommendation in effect:', err);
+          setIsRecommendationLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    currentState.energy,
+    currentState.stress,
+    currentState.mood,
+    currentState.desiredState,
+    currentState.whatHappened,
+    history.length,
+    history[0]?.didHelp,
+    history[0]?.wouldDoAgain,
+  ]);
+
+  // Reminder ticker: Checks every 30 seconds if preferred reminder time has arrived
+  const [lastAlarmTriggeredDate, setLastAlarmTriggeredDate] = useState<string>('');
+
+  useEffect(() => {
+    const reminderSettings = preferences.reminderSettings;
+    if (!reminderSettings || !reminderSettings.enabled) return;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const currentHourMinute = `${String(now.getHours()).padStart(2, '0')}:${String(
+        now.getMinutes()
+      ).padStart(2, '0')}`;
+      const todayDateStr = now.toISOString().split('T')[0];
+
+      if (
+        currentHourMinute === reminderSettings.preferredTime &&
+        lastAlarmTriggeredDate !== todayDateStr
+      ) {
+        // If weekly, check day of week (e.g. Monday = 1)
+        if (reminderSettings.frequency === 'weekly' && now.getDay() !== 1) {
+          return;
+        }
+
+        setLastAlarmTriggeredDate(todayDateStr);
+
+        // 1. Play ringing alarm chime if enabled
+        if (reminderSettings.alarmSoundEnabled && preferences.soundEnabled) {
+          soundEngine.playReminderAlarm();
+        }
+
+        // 2. Dispatch browser notification if enabled
+        if (reminderSettings.browserNotificationEnabled) {
+          triggerBrowserNotification('🌿 Time for your Mindful Check-In', {
+            body: `Take 2 minutes to check in with your mood and reflect on your goals (${preferences.goals?.join(', ') || 'Calm'}).`,
+            onClick: () => {
+              setShowCheckInModal(true);
+            },
+          });
+        }
+
+        // 3. Automatically pop up Check-In modal if app is open
+        setShowCheckInModal(true);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [preferences.reminderSettings, preferences.soundEnabled, preferences.goals, lastAlarmTriggeredDate]);
 
   // Firebase Google Auth Listener & Firestore Data Hydration
   useEffect(() => {
@@ -199,6 +308,7 @@ export default function App() {
       await logoutUser();
       setCurrentUser(null);
       setLastSyncedTime(null);
+      setHasCompletedGuestCycle(false);
     } catch (err) {
       console.error('Sign-out failed:', err);
     }
@@ -234,14 +344,105 @@ export default function App() {
     }
   };
 
-  const handleCompleteOnboarding = (updated: UserPreferences) => {
+  // Google Calendar Sync Handler (with auto-provision or update)
+  const handleSyncGoogleCalendar = async (settings: ReminderSettings) => {
+    setIsCalendarSyncing(true);
+    try {
+      let token = getGoogleAccessToken();
+      if (!token) {
+        const loginRes = await loginWithGoogle();
+        token = loginRes.accessToken;
+      }
+      if (!token) {
+        throw new Error('Google authorization token not available. Please sign in with Google to grant Calendar access.');
+      }
+      const eventResult = await syncMindfulCalendarEvent(token, settings, preferences.goals);
+      const updatedReminder: ReminderSettings = {
+        ...settings,
+        googleCalendarEnabled: true,
+        googleCalendarEventId: eventResult.eventId,
+        googleCalendarEventLink: eventResult.htmlLink,
+        lastCalendarSync: Date.now(),
+      };
+      const updatedPrefs: UserPreferences = {
+        ...preferences,
+        reminderSettings: updatedReminder,
+      };
+      handleUpdatePreferences(updatedPrefs);
+    } catch (err: any) {
+      console.error('Failed to sync Google Calendar event:', err);
+      alert(`Calendar Sync Notice: ${err?.message || 'Unable to sync with Google Calendar'}`);
+    } finally {
+      setIsCalendarSyncing(false);
+    }
+  };
+
+  // Google Calendar Removal Handler
+  const handleRemoveGoogleCalendar = async () => {
+    const eventId = preferences.reminderSettings?.googleCalendarEventId;
+    if (!eventId) return;
+    setIsCalendarSyncing(true);
+    try {
+      let token = getGoogleAccessToken();
+      if (!token) {
+        const loginRes = await loginWithGoogle();
+        token = loginRes.accessToken;
+      }
+      if (token) {
+        await removeMindfulCalendarEvent(token, eventId);
+      }
+      const updatedReminder: ReminderSettings = {
+        ...(preferences.reminderSettings || DEFAULT_PREFERENCES.reminderSettings!),
+        googleCalendarEnabled: false,
+        googleCalendarEventId: undefined,
+        googleCalendarEventLink: undefined,
+        lastCalendarSync: undefined,
+      };
+      const updatedPrefs: UserPreferences = {
+        ...preferences,
+        reminderSettings: updatedReminder,
+      };
+      handleUpdatePreferences(updatedPrefs);
+    } catch (err: any) {
+      console.error('Failed to remove Google Calendar event:', err);
+      alert(`Calendar Notice: ${err?.message || 'Unable to remove event from Google Calendar'}`);
+    } finally {
+      setIsCalendarSyncing(false);
+    }
+  };
+
+  const handleCompleteOnboarding = async (updated: UserPreferences) => {
     setPreferences(updated);
     storage.savePreferences(updated);
     setShowOnboarding(false);
+
     if (currentUser) {
       syncUserProfile(currentUser, { preferences: updated })
         .then(() => setLastSyncedTime(Date.now()))
         .catch(console.error);
+
+      // If user enabled Google Calendar and has token, schedule event immediately
+      if (updated.reminderSettings?.googleCalendarEnabled) {
+        const token = getGoogleAccessToken();
+        if (token) {
+          syncMindfulCalendarEvent(token, updated.reminderSettings, updated.goals)
+            .then((result) => {
+              const withCal: UserPreferences = {
+                ...updated,
+                reminderSettings: {
+                  ...updated.reminderSettings!,
+                  googleCalendarEventId: result.eventId,
+                  googleCalendarEventLink: result.htmlLink,
+                  lastCalendarSync: Date.now(),
+                },
+              };
+              setPreferences(withCal);
+              storage.savePreferences(withCal);
+              syncUserProfile(currentUser, { preferences: withCal });
+            })
+            .catch(console.error);
+        }
+      }
     }
   };
 
@@ -327,11 +528,13 @@ export default function App() {
     }
 
     if (newState.wantsToAct) {
-      const rec = getRecommendation(newState, history);
-      setRecommendation(rec);
+      const instantRec = getFallbackRecommendation(newState, updatedHistory, preferences);
+      setRecommendation(instantRec);
+
+      refreshLLMRecommendation(newState, updatedHistory);
 
       // If user consistently dislikes meditation, open Alternatives directly
-      if (rec.suggestExploreFirst) {
+      if (instantRec.suggestExploreFirst) {
         setShowAlternativesModal(true);
       }
     }
@@ -385,6 +588,7 @@ export default function App() {
         saveCheckInToFirestore(currentUser.uid, record).catch(console.error);
       }
       setShowPostFeedback(false);
+      refreshLLMRecommendation(currentState, updatedHistory);
       return;
     }
 
@@ -432,6 +636,9 @@ export default function App() {
     }
 
     setShowPostFeedback(false);
+
+    // Promptly re-query LLM with updated feedback history so the learning loop reflects immediately
+    refreshLLMRecommendation(updatedState, updatedHistory);
   };
 
   // Demo Resets
@@ -467,66 +674,99 @@ export default function App() {
     }
   };
 
+  const isGuestFirstTime = !currentUser && !hasCompletedGuestCycle && history.length === 0;
+
   return (
     <div className="min-h-screen bg-[#F5F2ED] text-[#2D2D2D] flex flex-col justify-between selection:bg-[#E8E2D9] selection:text-[#4A5D4A]">
       {/* Top Mobile-First App Wrapper */}
-      <main className="flex-1 w-full max-w-md mx-auto pt-4 px-3 sm:px-0">
-        {currentTab === 'home' && (
-          <HomeDashboard
-            preferences={preferences}
-            currentState={currentState}
-            recommendation={recommendation}
-            streakDays={streakDays}
-            onOpenCheckIn={handleOpenDailyCheckIn}
-            onStartPractice={handleStartPractice}
-            onNotWhatINeed={() => setShowAlternativesModal(true)}
-            onGoToExplore={() => setCurrentTab('explore')}
-            currentUser={currentUser}
-            onGoogleLogin={handleGoogleLogin}
-            isSyncing={isSyncing}
-          />
-        )}
-
-        {currentTab === 'explore' && (
-          <ExploreView
-            onStartDiyPractice={(item) => {
-              setSelectedExploreItem(item);
+      <main className="flex-1 w-full max-w-2xl mx-auto pt-4 px-3 sm:px-4">
+        {isGuestFirstTime ? (
+          <FirstTimeCheckInFlow
+            onGoogleSignIn={handleGoogleLogin}
+            onCompleteAsGuest={(record, updatedState) => {
+              const updatedHistory = [record, ...history];
+              setHistory(updatedHistory);
+              setCurrentState(updatedState);
+              storage.saveCheckIn(record);
+              storage.saveCurrentState(updatedState);
+              const updatedPrefs = { ...preferences, onboarded: true };
+              setPreferences(updatedPrefs);
+              storage.savePreferences(updatedPrefs);
+              setHasCompletedGuestCycle(true);
+              setShowOnboarding(false);
+              refreshLLMRecommendation(updatedState, updatedHistory);
             }}
-            selectedInitialItem={selectedExploreItem}
-          />
-        )}
-
-        {currentTab === 'progress' && (
-          <ProgressView history={history} streakDays={streakDays} />
-        )}
-
-        {currentTab === 'profile' && (
-          <ProfileView
-            preferences={preferences}
-            onUpdatePreferences={handleUpdatePreferences}
-            onRetakeOnboarding={() => setShowOnboarding(true)}
-            onResetSampleData={handleResetSampleData}
-            onClearAllData={handleClearAll}
-            currentUser={currentUser}
-            onGoogleLogin={handleGoogleLogin}
-            onLogout={handleLogout}
             isSyncing={isSyncing}
-            lastSyncedTime={lastSyncedTime}
             authError={authError}
-            onManualSync={handleManualSync}
           />
+        ) : (
+          <>
+            {currentTab === 'home' && (
+              <HomeDashboard
+                preferences={preferences}
+                currentState={currentState}
+                recommendation={recommendation}
+                streakDays={streakDays}
+                onOpenCheckIn={handleOpenDailyCheckIn}
+                onStartPractice={handleStartPractice}
+                onNotWhatINeed={() => setShowAlternativesModal(true)}
+                onGoToExplore={() => setCurrentTab('explore')}
+                currentUser={currentUser}
+                onGoogleLogin={handleGoogleLogin}
+                isSyncing={isSyncing}
+                history={history}
+                isRecommendationLoading={isRecommendationLoading}
+                onRefreshRecommendation={() => refreshLLMRecommendation()}
+              />
+            )}
+
+            {currentTab === 'explore' && (
+              <ExploreView
+                onStartDiyPractice={(item) => {
+                  setSelectedExploreItem(item);
+                }}
+                selectedInitialItem={selectedExploreItem}
+              />
+            )}
+
+            {currentTab === 'progress' && (
+              <ProgressView history={history} streakDays={streakDays} />
+            )}
+
+            {currentTab === 'profile' && (
+              <ProfileView
+                preferences={preferences}
+                onUpdatePreferences={handleUpdatePreferences}
+                onRetakeOnboarding={() => setShowOnboarding(true)}
+                onResetSampleData={handleResetSampleData}
+                onClearAllData={handleClearAll}
+                currentUser={currentUser}
+                onGoogleLogin={handleGoogleLogin}
+                onLogout={handleLogout}
+                isSyncing={isSyncing}
+                lastSyncedTime={lastSyncedTime}
+                authError={authError}
+                onManualSync={handleManualSync}
+                onSyncGoogleCalendar={handleSyncGoogleCalendar}
+                onRemoveGoogleCalendar={handleRemoveGoogleCalendar}
+                isCalendarSyncing={isCalendarSyncing}
+              />
+            )}
+          </>
         )}
       </main>
 
-      {/* Persistent Bottom Navigation */}
-      <Navigation
-        currentTab={currentTab}
-        onSelectTab={(tab) => {
-          setCurrentTab(tab);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenCheckIn={handleOpenDailyCheckIn}
-      />
+      {/* Persistent Bottom Navigation - hidden during guest first-time check-in */}
+      {!isGuestFirstTime && (
+        <Navigation
+          currentTab={currentTab}
+          onSelectTab={(tab) => {
+            setCurrentTab(tab);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onOpenCheckIn={handleOpenDailyCheckIn}
+        />
+      )}
 
       {/* Guided Practice Active Full-Screen Screen */}
       {activePractice && (
@@ -558,6 +798,7 @@ export default function App() {
           onComplete={handleCheckInComplete}
           targetPractice={pendingPractice}
           initialState={currentState}
+          userGoals={preferences.goals}
         />
       )}
 
@@ -579,10 +820,12 @@ export default function App() {
       )}
 
       {/* Welcome Onboarding Modal */}
-      {showOnboarding && (
+      {showOnboarding && !isGuestFirstTime && (
         <OnboardingModal
           initialPreferences={preferences}
           onComplete={handleCompleteOnboarding}
+          currentUser={currentUser}
+          onGoogleLogin={handleGoogleLogin}
         />
       )}
     </div>

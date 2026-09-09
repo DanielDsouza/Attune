@@ -1,3 +1,15 @@
+export interface ReminderSettings {
+  enabled: boolean;
+  frequency: 'daily' | 'weekly';
+  preferredTime: string; // "HH:MM" 24-hr format e.g. "08:30"
+  alarmSoundEnabled: boolean;
+  browserNotificationEnabled: boolean;
+  googleCalendarEnabled: boolean;
+  googleCalendarEventId?: string;
+  googleCalendarEventLink?: string;
+  lastCalendarSync?: number;
+}
+
 export interface UserPreferences {
   name: string;
   checkInTime: 'morning' | 'afternoon' | 'evening' | 'night';
@@ -6,6 +18,7 @@ export interface UserPreferences {
   activityTypes: string[]; // e.g. ['Guided practice', 'Independent learning', 'Movement', 'Creative', 'Social']
   soundEnabled: boolean;
   onboarded: boolean;
+  reminderSettings?: ReminderSettings;
 }
 
 export type DesiredState = 
@@ -17,14 +30,22 @@ export type DesiredState =
   | 'Grounded'
   | 'Sleepy / ready for rest';
 
+export interface GoalReflection {
+  primaryGoal: string;
+  status: 'progressing' | 'need_support' | 'distracted' | 'breakthrough';
+  note?: string;
+}
+
 export interface EmotionalState {
   energy: number; // 1 to 5
   stress: number; // 1 to 5
+  stressRating10?: number; // 1 to 10 scale for detailed stress check-in
   mood: number; // 1 to 5
   moodLabel: string; // e.g. 'Anxious', 'Fatigued', 'Neutral', 'Content', 'Joyful'
   whatHappened: string;
   desiredState: DesiredState;
   wantsToAct: boolean;
+  goalReflection?: GoalReflection;
   timestamp: number;
 }
 
@@ -41,6 +62,7 @@ export interface VideoGuide {
   channelName: string;
   likesOrRating?: string;
   duration?: string;
+  recommendationReason?: string;
 }
 
 export interface Practice {
@@ -58,6 +80,7 @@ export interface Practice {
   themeColor: string;
   ambientTone?: string;
   videoGuide?: VideoGuide;
+  isPersonalizedAI?: boolean;
 }
 
 export interface CheckInRecord {
@@ -65,6 +88,9 @@ export interface CheckInRecord {
   dateStr: string; // YYYY-MM-DD
   timeOfDay: string;
   stateBefore: EmotionalState;
+  stressRating10Before?: number;
+  stressRating10After?: number;
+  userMessage?: string;
   stateAfter?: {
     energy: number;
     stress: number;
@@ -76,6 +102,7 @@ export interface CheckInRecord {
   wouldDoAgain?: 'yes' | 'maybe' | 'no';
   alternativeChosen?: string;
   notes?: string;
+  goalReflection?: GoalReflection;
   completedAt?: number;
   timestamp: number;
 }
@@ -108,4 +135,30 @@ export interface RecommendationResult {
   contextSummary: string;
   secondaryOption?: Practice;
   suggestExploreFirst?: boolean;
+  goalAlignmentNote?: string;
+  suggestedNextSteps?: string[];
+  feedbackLearningNote?: string;
+  isAIGenerated?: boolean;
+  adaptedFromFeedback?: boolean;
+  videoGuide?: VideoGuide;
+  videoRecommendationReason?: string;
+}
+
+export interface AIRecommendationOption {
+  practiceId: string;
+  practice: Practice;
+  tag: string;
+  reason: string;
+  matchScore?: number;
+  videoGuide?: VideoGuide;
+  videoRecommendationReason?: string;
+}
+
+export interface AICheckInAnalysis {
+  emotionalReflection: string;
+  stressAssessment: string;
+  stressRating10: number;
+  recommendations: AIRecommendationOption[];
+  keyTakeaway: string;
+  source?: string;
 }

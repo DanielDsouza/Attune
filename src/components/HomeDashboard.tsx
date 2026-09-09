@@ -1,6 +1,6 @@
 import React from 'react';
-import { Sparkles, Battery, AlertCircle, Smile, Flame, Play, Clock, ArrowRight, Compass, RefreshCw, Cloud, LogIn } from 'lucide-react';
-import { UserPreferences, EmotionalState, RecommendationResult, Practice } from '../types';
+import { Sparkles, Battery, AlertCircle, Smile, Flame, Play, Clock, ArrowRight, Compass, RefreshCw, Cloud, LogIn, ThumbsDown, CheckCircle2 } from 'lucide-react';
+import { UserPreferences, EmotionalState, RecommendationResult, Practice, CheckInRecord } from '../types';
 import { RecommendationCard } from './RecommendationCard';
 import type { User as FirebaseUser } from 'firebase/auth';
 
@@ -16,6 +16,9 @@ interface HomeDashboardProps {
   currentUser?: FirebaseUser | null;
   onGoogleLogin?: () => void;
   isSyncing?: boolean;
+  history?: CheckInRecord[];
+  isRecommendationLoading?: boolean;
+  onRefreshRecommendation?: () => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
@@ -30,6 +33,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   currentUser,
   onGoogleLogin,
   isSyncing,
+  history = [],
+  isRecommendationLoading = false,
+  onRefreshRecommendation,
 }) => {
   // Time-aware greeting
   const getGreeting = () => {
@@ -51,8 +57,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <div className="flex justify-between items-start">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[#A69D91] font-semibold">
-                {currentUser ? 'Cloud Synced' : 'Welcome Back'}
+              <span className={`text-[10px] uppercase tracking-[0.2em] font-semibold px-2 py-0.5 rounded-full border ${
+                currentUser
+                  ? 'bg-[#E8F0E8] text-[#5A6E5A] border-[#D0E2D0]'
+                  : 'bg-amber-50 text-amber-800 border-amber-200'
+              }`}>
+                {currentUser ? 'Cloud Synced' : 'Not logged in'}
               </span>
               {currentUser && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-[#E8F0E8] text-[#5A6E5A]">
@@ -62,7 +72,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-serif font-light text-[#4A5D4A]">
-              {greeting}, {userName.split(' ')[0]}
+              {currentUser ? `${greeting}, ${userName.split(' ')[0]}` : greeting}
             </h1>
           </div>
 
@@ -74,9 +84,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 className="w-10 h-10 rounded-full border-2 border-white object-cover shadow-sm ring-2 ring-[#5A6E5A]/20"
                 referrerPolicy="no-referrer"
               />
-            ) : (
+            ) : currentUser ? (
               <div className="w-10 h-10 rounded-full bg-[#E8E2D9] border-2 border-white flex items-center justify-center text-[#5A6E5A] font-bold shadow-sm">
                 {userInitial}
+              </div>
+            ) : (
+              <div
+                title="Guest Mode (Not Logged In)"
+                className="w-10 h-10 rounded-full bg-[#F4EFE6] border-2 border-white flex items-center justify-center text-[#7D7566] shadow-sm ring-1 ring-[#E6DFD5]"
+              >
+                <LogIn className="w-4 h-4 text-[#7D7566]" />
               </div>
             )}
             {currentUser && (
@@ -114,7 +131,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </svg>
               <div className="truncate">
                 <div className="text-[11px] font-semibold text-[#2D2D2D] leading-tight">
-                  Login to Save your Practise
+                  Not logged in · Save your practices
                 </div>
                 <div className="text-[10px] text-[#7E7468] leading-tight">
                   Sign in with Google so data isn't lost
@@ -167,38 +184,113 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <div className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-[#F0EDE8]">
             <span className="text-lg mb-1">🌪️</span>
             <span className="text-[10px] text-[#A69D91] uppercase tracking-wider font-semibold">Stress</span>
-            <span className="font-bold text-sm text-[#2D2D2D] mt-0.5">{currentState.stress}/5</span>
+            <span className="font-bold text-sm text-[#2D2D2D] mt-0.5">
+              {currentState.stressRating10 ? `${currentState.stressRating10}/10` : `${currentState.stress}/5`}
+            </span>
           </div>
 
           <div className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-[#F0EDE8]">
             <span className="text-lg mb-1">☁️</span>
             <span className="text-[10px] text-[#A69D91] uppercase tracking-wider font-semibold">Mood</span>
             <span className="font-bold text-xs text-[#2D2D2D] mt-0.5 truncate max-w-full">
-              {currentState.moodLabel.split('/')[0].trim()}
+              {currentState.moodLabel ? currentState.moodLabel.split('/')[0].trim() : 'Checked In'}
             </span>
           </div>
         </div>
 
         {/* What happened note */}
-        {currentState.whatHappened && (
+        {currentState.whatHappened ? (
           <p className="text-xs text-[#7E7468] italic bg-white/80 p-3 rounded-2xl border border-[#F0EDE8] leading-relaxed">
-            "{currentState.whatHappened}"
+            &ldquo;{currentState.whatHappened}&rdquo;
           </p>
-        )}
+        ) : !currentUser && history.length === 0 ? (
+          <div className="text-center py-2">
+            <p className="text-xs text-[#7E7468] mb-2">No check-in recorded yet for today.</p>
+            <button
+              onClick={onOpenCheckIn}
+              className="px-4 py-2 rounded-xl bg-[#2D4A3E] text-white text-xs font-semibold hover:bg-[#233A31] transition-all"
+            >
+              Start 2-Minute Check-In (1–10 Scale)
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {/* Recommended Practice Section */}
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-[#2D2D2D] px-1">
-          Your Personal Reset
-        </h3>
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-sm font-semibold text-[#2D2D2D]">
+            Your Personal Reset
+          </h3>
+          {onRefreshRecommendation && (
+            <button
+              type="button"
+              onClick={onRefreshRecommendation}
+              disabled={isRecommendationLoading}
+              className="text-[11px] font-medium text-[#5A6E5A] hover:text-[#4A5D4A] flex items-center gap-1 transition-colors cursor-pointer"
+              title="Re-ask Attune AI for fresh recommendation"
+            >
+              <RefreshCw
+                className={`w-3 h-3 ${isRecommendationLoading ? 'animate-spin' : ''}`}
+              />
+              <span>{isRecommendationLoading ? 'Consulting AI...' : 'Regenerate'}</span>
+            </button>
+          )}
+        </div>
+
         <RecommendationCard
           recommendation={recommendation}
           currentState={currentState}
           onStartPractice={() => onStartPractice(recommendation.practice)}
           onNotWhatINeed={onNotWhatINeed}
           onCheckInAgain={onOpenCheckIn}
+          isLoading={isRecommendationLoading}
         />
+
+        {/* Feedback Learning Memory Indicator (Demonstrates 'Learns Over Time' live in demo) */}
+        {history.some((h) => h.didHelp || h.wouldDoAgain) && (
+          <div className="p-3.5 rounded-2xl bg-[#FBF9F6] border border-[#F0EDE8] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-[#5A6E5A] flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-[#5A6E5A]" />
+                Companion Learning Loop
+              </span>
+              <span className="text-[10px] text-[#A69D91]">
+                {history.filter((h) => h.didHelp).length} rated sessions
+              </span>
+            </div>
+            <p className="text-[11px] text-[#7E7468] leading-relaxed">
+              Every post-practice rating trains your AI: negative ratings ("Not really") actively exclude that style and pivot to alternative modalities.
+            </p>
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {history
+                .filter((h) => h.didHelp && h.practiceTitle)
+                .slice(0, 3)
+                .map((h) => {
+                  const isNegative = h.didHelp === 'not_really' || h.wouldDoAgain === 'no';
+                  return (
+                    <span
+                      key={h.id}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium border ${
+                        isNegative
+                          ? 'bg-[#FDF2F2] border-[#F5C2C2] text-[#9B2C2C]'
+                          : 'bg-[#F2F7F2] border-[#C5DDC8] text-[#2F5938]'
+                      }`}
+                    >
+                      {isNegative ? (
+                        <ThumbsDown className="w-2.5 h-2.5 text-[#9B2C2C]" />
+                      ) : (
+                        <CheckCircle2 className="w-2.5 h-2.5 text-[#2F5938]" />
+                      )}
+                      <span>
+                        {h.practiceTitle}: {h.didHelp === 'not_really' ? 'Not really (avoiding)' : 'Helped'}
+                      </span>
+                    </span>
+                  );
+                })}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Alternative Explore Organic Banner */}

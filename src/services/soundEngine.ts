@@ -121,6 +121,63 @@ class SoundEngine {
       // Graceful fallback
     }
   }
+
+  // Mindful single chime
+  public playChime() {
+    this.playSingingBowl(523.25);
+  }
+
+  // Resonant bell
+  public playBell() {
+    this.playSingingBowl(329.63);
+  }
+
+  // Subtle UI click feedback
+  public playClick() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.04);
+      gain.gain.setValueAtTime(0.04, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Play a mindful reminder chime alarm sequence
+  public playReminderAlarm() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    try {
+      // Melodious, gentle Eastern temple bell sequence
+      const chimePattern = [
+        { freq: 523.25, delay: 0 },    // C5
+        { freq: 659.25, delay: 350 },  // E5
+        { freq: 783.99, delay: 700 },  // G5
+        { freq: 1046.50, delay: 1100 }, // C6
+        { freq: 523.25, delay: 2200 },  // Low resonant echo
+      ];
+
+      chimePattern.forEach((note) => {
+        setTimeout(() => {
+          this.playSingingBowl(note.freq);
+        }, note.delay);
+      });
+    } catch {
+      // Graceful fallback
+    }
+  }
 }
 
 export const soundEngine = new SoundEngine();
