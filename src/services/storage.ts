@@ -219,14 +219,25 @@ export const storage = {
     }
   },
 
-  getCurrentState(): EmotionalState | null {
+  getCurrentState(): EmotionalState {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CURRENT_STATE);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...DEFAULT_INITIAL_STATE,
+            ...parsed,
+            energy: typeof parsed.energy === 'number' ? parsed.energy : DEFAULT_INITIAL_STATE.energy,
+            stress: typeof parsed.stress === 'number' ? parsed.stress : DEFAULT_INITIAL_STATE.stress,
+            mood: typeof parsed.mood === 'number' ? parsed.mood : DEFAULT_INITIAL_STATE.mood,
+          };
+        }
+      }
     } catch {
       // Fallback
     }
-    return null;
+    return DEFAULT_INITIAL_STATE;
   },
 
   saveCurrentState(state: EmotionalState): void {

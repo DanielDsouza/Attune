@@ -19,7 +19,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({
   const avgEnergyBefore =
     completedSessions.length > 0
       ? (
-          completedSessions.reduce((acc, h) => acc + h.stateBefore.energy, 0) /
+          completedSessions.reduce((acc, h) => acc + (h.stateBefore?.energy ?? 2), 0) /
           completedSessions.length
         ).toFixed(1)
       : '2.0';
@@ -36,7 +36,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({
   const avgStressBefore =
     completedSessions.length > 0
       ? (
-          completedSessions.reduce((acc, h) => acc + h.stateBefore.stress, 0) /
+          completedSessions.reduce((acc, h) => acc + (h.stateBefore?.stress ?? 4), 0) /
           completedSessions.length
         ).toFixed(1)
       : '4.2';

@@ -66,7 +66,7 @@ export default function App() {
     storage.getPreferences()
   );
   const [currentState, setCurrentState] = useState<EmotionalState>(() =>
-    storage.getCurrentState()
+    storage.getCurrentState() || DEFAULT_INITIAL_STATE
   );
   const [history, setHistory] = useState<CheckInRecord[]>(() =>
     storage.getCheckIns()
@@ -106,7 +106,7 @@ export default function App() {
 
   // Recommendation derived from current state, history, and user preferences (goals)
   const [recommendation, setRecommendation] = useState<RecommendationResult>(
-    () => getFallbackRecommendation(currentState, history, preferences)
+    () => getFallbackRecommendation(currentState || DEFAULT_INITIAL_STATE, history, preferences)
   );
   const [isRecommendationLoading, setIsRecommendationLoading] = useState<boolean>(false);
 
@@ -117,7 +117,7 @@ export default function App() {
 
   // Asynchronously query the Attune AI recommendation engine with state and feedback history
   const refreshLLMRecommendation = async (
-    stateToUse: EmotionalState = currentState,
+    stateToUse: EmotionalState = currentState || DEFAULT_INITIAL_STATE,
     historyToUse: CheckInRecord[] = history
   ) => {
     setIsRecommendationLoading(true);
@@ -136,7 +136,7 @@ export default function App() {
     let isCancelled = false;
     setIsRecommendationLoading(true);
 
-    getLLMRecommendation(currentState, history, preferences)
+    getLLMRecommendation(currentState || DEFAULT_INITIAL_STATE, history, preferences)
       .then((rec) => {
         if (!isCancelled) {
           setRecommendation(rec);
@@ -154,11 +154,11 @@ export default function App() {
       isCancelled = true;
     };
   }, [
-    currentState.energy,
-    currentState.stress,
-    currentState.mood,
-    currentState.desiredState,
-    currentState.whatHappened,
+    currentState?.energy,
+    currentState?.stress,
+    currentState?.mood,
+    currentState?.desiredState,
+    currentState?.whatHappened,
     history.length,
     history[0]?.didHelp,
     history[0]?.wouldDoAgain,

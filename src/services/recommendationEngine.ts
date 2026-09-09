@@ -9,16 +9,42 @@ import {
 } from '../types';
 import { PRACTICES } from '../data/mockPractices';
 
+const DEFAULT_STATE: EmotionalState = {
+  energy: 2,
+  stress: 4,
+  mood: 2,
+  moodLabel: 'Overwhelmed',
+  whatHappened: '',
+  desiredState: 'Calm',
+  wantsToAct: true,
+  timestamp: Date.now(),
+};
+
+function ensureState(state?: EmotionalState | null): EmotionalState {
+  if (!state || typeof state !== 'object') {
+    return DEFAULT_STATE;
+  }
+  return {
+    ...DEFAULT_STATE,
+    ...state,
+    energy: typeof state.energy === 'number' ? state.energy : DEFAULT_STATE.energy,
+    stress: typeof state.stress === 'number' ? state.stress : DEFAULT_STATE.stress,
+    mood: typeof state.mood === 'number' ? state.mood : DEFAULT_STATE.mood,
+    desiredState: state.desiredState || DEFAULT_STATE.desiredState,
+  };
+}
+
 /**
  * Generates tailored next steps based on user's emotional state, goal reflection, and preferences
  */
 export function deriveNextSteps(
-  currentState: EmotionalState,
+  currentState?: EmotionalState | null,
   userPreferences?: UserPreferences
 ): string[] {
+  const safeState = ensureState(currentState);
   const steps: string[] = [];
-  const primaryGoal = currentState.goalReflection?.primaryGoal || userPreferences?.goals?.[0] || 'Calm';
-  const { stress, energy, mood } = currentState;
+  const primaryGoal = safeState.goalReflection?.primaryGoal || userPreferences?.goals?.[0] || 'Calm';
+  const { stress, energy, mood } = safeState;
 
   if (stress >= 4) {
     steps.push('Take 3 conscious diaphragmatic breaths before checking new messages.');
@@ -51,12 +77,13 @@ export function deriveNextSteps(
  * Evaluates the user's past ~5 check-ins to respect negative ratings immediately.
  */
 export function getFallbackRecommendation(
-  currentState: EmotionalState,
+  currentState?: EmotionalState | null,
   history: CheckInRecord[] = [],
   userPreferences?: UserPreferences
 ): RecommendationResult {
-  const { energy, stress, desiredState, goalReflection } = currentState;
-  const nextSteps = deriveNextSteps(currentState, userPreferences);
+  const safeState = ensureState(currentState);
+  const { energy, stress, desiredState, goalReflection } = safeState;
+  const nextSteps = deriveNextSteps(safeState, userPreferences);
 
   // Goal alignment note
   const primaryGoal = goalReflection?.primaryGoal || userPreferences?.goals?.[0];
@@ -259,10 +286,11 @@ export function getFallbackRecommendation(
  * avoids the disliked practice/modality, and explains its adaptation in the one-line reason.
  */
 export async function getLLMRecommendation(
-  currentState: EmotionalState,
+  currentState?: EmotionalState | null,
   history: CheckInRecord[] = [],
   userPreferences?: UserPreferences
 ): Promise<RecommendationResult> {
+  const safeState = ensureState(currentState);
   try {
     // Only send the last 5 check-ins to keep prompt dense and focused
     const recentHistory = history.slice(0, 5);
@@ -273,7 +301,7 @@ export async function getLLMRecommendation(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        currentState,
+        currentState: safeState,
         history: recentHistory,
         preferences: userPreferences,
       }),
@@ -281,7 +309,7 @@ export async function getLLMRecommendation(
 
     if (!response.ok) {
       console.warn(`[Recommendation Engine] Server returned ${response.status}, using smart fallback`);
-      return getFallbackRecommendation(currentState, history, userPreferences);
+      return getFallbackRecommendation(safeState, history, userPreferences);
     }
 
     const data = await response.json();
@@ -301,7 +329,7 @@ export async function getLLMRecommendation(
     const nextSteps =
       Array.isArray(data.suggestedNextSteps) && data.suggestedNextSteps.length > 0
         ? data.suggestedNextSteps
-        : deriveNextSteps(currentState, userPreferences);
+        : deriveNextSteps(safeState, userPreferences);
 
     const isAdapted = Boolean(
       data.feedbackLearningNote ||
@@ -318,7 +346,7 @@ export async function getLLMRecommendation(
       matchScore: data.matchScore ?? 0.96,
       contextSummary:
         data.contextSummary ||
-        `Energy ${currentState.energy}/5 · Stress ${currentState.stress}/5 · Desired: ${currentState.desiredState}`,
+        `Energy ${safeState.energy}/5 · Stress ${safeState.stress}/5 · Desired: ${safeState.desiredState}`,
       secondaryOption,
       suggestExploreFirst: Boolean(data.suggestExploreFirst),
       goalAlignmentNote: data.goalAlignmentNote,
@@ -331,7 +359,7 @@ export async function getLLMRecommendation(
     };
   } catch (err) {
     console.info('[Recommendation Engine] Using responsive smart fallback for recommendation:', err);
-    return getFallbackRecommendation(currentState, history, userPreferences);
+    return getFallbackRecommendation(safeState, history, userPreferences);
   }
 }
 
@@ -339,7 +367,7 @@ export async function getLLMRecommendation(
  * Backward-compatible wrapper that returns fallback synchronously.
  */
 export function getRecommendation(
-  currentState: EmotionalState,
+  currentState?: EmotionalState | null,
   history: CheckInRecord[] = [],
   userPreferences?: UserPreferences
 ): RecommendationResult {

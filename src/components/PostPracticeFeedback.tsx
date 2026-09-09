@@ -21,14 +21,22 @@ export const PostPracticeFeedback: React.FC<PostPracticeFeedbackProps> = ({
   onSaveFeedback,
   onOpenAlternatives,
 }) => {
+  const safeStateBefore = stateBefore || {
+    energy: 2,
+    stress: 4,
+    mood: 2,
+    desiredState: 'Calm' as const,
+    timestamp: Date.now(),
+  };
+
   const [energyAfter, setEnergyAfter] = useState<number>(
-    Math.min(5, Math.max(1, stateBefore.energy + 1))
+    Math.min(5, Math.max(1, (safeStateBefore.energy ?? 2) + 1))
   );
   const [stressAfter, setStressAfter] = useState<number>(
-    Math.max(1, stateBefore.stress - 2)
+    Math.max(1, (safeStateBefore.stress ?? 4) - 2)
   );
   const [moodAfter, setMoodAfter] = useState<number>(
-    Math.min(5, Math.max(1, stateBefore.mood + 1))
+    Math.min(5, Math.max(1, (safeStateBefore.mood ?? 2) + 1))
   );
 
   const [didHelp, setDidHelp] = useState<'yes' | 'little' | 'not_really'>('yes');
@@ -199,14 +207,14 @@ export const PostPracticeFeedback: React.FC<PostPracticeFeedbackProps> = ({
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="space-y-1.5 p-3 rounded-xl bg-[#FBF9F6] border border-[#F0EDE8]">
                     <div className="font-semibold text-[#2D2D2D]">Energy Shift</div>
-                    <div className="text-[#7E7468]">Before: {renderStars(stateBefore.energy)}</div>
+                    <div className="text-[#7E7468]">Before: {renderStars(safeStateBefore.energy ?? 2)}</div>
                     <div className="text-[#2D2D2D] font-medium">
                       After: {renderStars(energyAfter)}
                     </div>
                     <div className="text-[11px] text-[#5A6E5A] font-semibold">
-                      {energyAfter > stateBefore.energy
-                        ? `+${energyAfter - stateBefore.energy} Energy boost`
-                        : energyAfter < stateBefore.energy
+                      {energyAfter > (safeStateBefore.energy ?? 2)
+                        ? `+${energyAfter - (safeStateBefore.energy ?? 2)} Energy boost`
+                        : energyAfter < (safeStateBefore.energy ?? 2)
                         ? 'Settled & calmed down'
                         : 'Maintained steady'}
                     </div>
@@ -214,14 +222,14 @@ export const PostPracticeFeedback: React.FC<PostPracticeFeedbackProps> = ({
 
                   <div className="space-y-1.5 p-3 rounded-xl bg-[#FBF9F6] border border-[#F0EDE8]">
                     <div className="font-semibold text-[#2D2D2D]">Stress Relief</div>
-                    <div className="text-[#7E7468]">Before: {renderStars(stateBefore.stress)}</div>
+                    <div className="text-[#7E7468]">Before: {renderStars(safeStateBefore.stress ?? 4)}</div>
                     <div className="text-[#2D2D2D] font-medium">
                       After: {renderStars(stressAfter)}
                     </div>
                     <div className="text-[11px] text-[#5A6E5A] font-semibold">
-                      {stressAfter < stateBefore.stress
-                        ? `-${stateBefore.stress - stressAfter} Reduced tension`
-                        : stressAfter > stateBefore.stress
+                      {stressAfter < (safeStateBefore.stress ?? 4)
+                        ? `-${(safeStateBefore.stress ?? 4) - stressAfter} Reduced tension`
+                        : stressAfter > (safeStateBefore.stress ?? 4)
                         ? 'Slight elevation'
                         : 'Unchanged'}
                     </div>

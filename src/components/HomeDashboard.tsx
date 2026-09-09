@@ -178,14 +178,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <div className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-[#F0EDE8]">
             <span className="text-lg mb-1">🔋</span>
             <span className="text-[10px] text-[#A69D91] uppercase tracking-wider font-semibold">Energy</span>
-            <span className="font-bold text-sm text-[#2D2D2D] mt-0.5">{currentState.energy}/5</span>
+            <span className="font-bold text-sm text-[#2D2D2D] mt-0.5">{currentState?.energy ?? 3}/5</span>
           </div>
 
           <div className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-[#F0EDE8]">
             <span className="text-lg mb-1">🌪️</span>
             <span className="text-[10px] text-[#A69D91] uppercase tracking-wider font-semibold">Stress</span>
             <span className="font-bold text-sm text-[#2D2D2D] mt-0.5">
-              {currentState.stressRating10 ? `${currentState.stressRating10}/10` : `${currentState.stress}/5`}
+              {currentState?.stressRating10 ? `${currentState.stressRating10}/10` : `${currentState?.stress ?? 3}/5`}
             </span>
           </div>
 
@@ -193,13 +193,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <span className="text-lg mb-1">☁️</span>
             <span className="text-[10px] text-[#A69D91] uppercase tracking-wider font-semibold">Mood</span>
             <span className="font-bold text-xs text-[#2D2D2D] mt-0.5 truncate max-w-full">
-              {currentState.moodLabel ? currentState.moodLabel.split('/')[0].trim() : 'Checked In'}
+              {currentState?.moodLabel ? currentState.moodLabel.split('/')[0].trim() : 'Checked In'}
             </span>
           </div>
         </div>
 
         {/* What happened note */}
-        {currentState.whatHappened ? (
+        {currentState?.whatHappened ? (
           <p className="text-xs text-[#7E7468] italic bg-white/80 p-3 rounded-2xl border border-[#F0EDE8] leading-relaxed">
             &ldquo;{currentState.whatHappened}&rdquo;
           </p>
