@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import {
   UserPreferences,
   EmotionalState,
@@ -828,6 +829,9 @@ export default function App() {
           onGoogleLogin={handleGoogleLogin}
         />
       )}
+
+      {/* Vercel Web Analytics */}
+      <Analytics />
     </div>
   );
 }
